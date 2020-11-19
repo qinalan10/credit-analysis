@@ -1,7 +1,7 @@
 ---
-title: "Title of Analysis Goes Here"
-author: "Your Name (netid@illinois.edu)"
-date: "Insert Date Here"
+title: "Credit Analysis"
+author: "Alan Qin (aqin2@illinois.edu)"
+date: "11/18/2021"
 output:
   html_document: 
     theme: default
@@ -9,24 +9,27 @@ output:
 ---
 
 ```{r, setup, include = FALSE}
-knitr::opts_chunk$set(echo = FALSE, fig.align = 'center')
+knitr::opts_chunk$set(echo = TRUE, fig.align = 'center')
 ```
 
 ```{r, load-packages, include = FALSE}
 # load packages
+library(tidyverse)
+library(caret)
+library(pROC)
 ```
 
-```{r make-data, warning = FALSE, message = FALSE}
+```{r make-data, warning = FALSE, message = FALSE, include = FALSE}
 # read data and subset
 source("make-data.R")
 ```
 
-```{r read-full-data, warning = FALSE, message = FALSE}
+```{r read-full-data, warning = FALSE, message = FALSE, include = FALSE}
 # read full data
 cc = data.table::fread("data/cc.csv.gz")
 ```
 
-```{r read-subset-data, warning = FALSE, message = FALSE}
+```{r read-subset-data, warning = FALSE, message = FALSE, include = FALSE}
 # read subset of data
 cc_sub = data.table::fread("data/cc-sub.csv")
 ```
@@ -35,42 +38,282 @@ cc_sub = data.table::fread("data/cc-sub.csv")
 
 ## Abstract
 
-> Abstract text goes here.
+> We are doing this analysis in order to analyze the given data and predict whether a bank credit card transaction is genuine or fradulent. To do this analysis, we have to subset, examine the data, create the models, then evaluate each model. To evaluate the data, we look at different binary classification metrics especially sensitivity and precision. After creating many different machine learning models, I used a decision tree model to predict the fraudulent charges 100% of the time on the testing data. Despite our results, we should use the chosen model on a larger dataset before it should be put into use. 
 
 ***
 
 ## Introduction
 
-Write your introduction here.
+Credit Cards are the most common payment method in the United States and as a result, there are more and more theft regarding Credit Cards. The goal of this data analysis is to create a tool that can be used to detect credit card fraud. The data set used has two distinct features that make the data analysis harder to perform. The first is the fact that the data is very imbalanced, in a sample of 10000 observations, we can see that there are only 15 observations (.15%) that are labeled `fraud`. The second feature that makes this data hard to use is that fact that we do not know what our feature variables are, making it harder to pick and choose what variables to use in our model. To detect fraud, machine learning methods are applied to the aforementioned data set and then used to predict fraud based on the data given. The results show that there is a lot of potential for further optimization with bigger data sets that major financial companies have. 
 
 ***
 
 ## Methods
 
-Describe the methods used in this section.
 
 ### Data
 
-Specifically describe the data and how it is used here.
+```{r}
+set.seed(432)
+cc_sub$Class = factor(cc_sub$Class)
+trn_idx = createDataPartition(cc_sub$Class, p = .8, list = TRUE)
+cc_trn = cc_sub[trn_idx$Resample1, ]
+cc_tst = cc_sub[-trn_idx$Resample1, ]
+```
+
+
+The data acquired was from Kaggle and contains credit card transactions during a two day period. The data contains information about 284,807 transactions, 492 of which were fraudulent charges, making this a very imbalanced data set. For each observation, were 31 predictors `Time`, `Class`, `Amount`, and 28 columns of principal components. These 28 columns were used to maintain privacy. Some of these  and then was split into a subset to use because of the limited hardware capabilities of my computer. After the original credit card data was split into a subset, I then split it again into training and testing data sets to evaluate my models in the future. After test-train splitting the data, I then created two new training datas to under-sample the majority class and then over-sample the minority class to make the data more artificially balanced. 
 
 ### Modeling
 
-Discuss your modeling and validation strategy here.
+The first thing I wanted to do was to establish a performance metric to use to measure our results. The most common/obvious performance metric is accuracy but, in this case, accuracy is probably the worst metric to use. This is because of the balance of the data set that we are using. Because this is a binary classification problem, if we use accuracy we will end up with an accuracy of 99.85% if we were to guess the majority class which is genuine. A few metrics that would avoid this problem would be Precision, Recall, and the F1:Score (weighted average of precision and recall). Precision and recall are good for this data set because of what they measure, true positives for recall and true negatives for precision. Precision measures how exact a classifier/model's exactness while recall is a measure of a classifier/model's completeness.
+
+
+```{r train controls, include = FALSE}
+cv_down = trainControl(method = "cv", number = 5, sampling = 'down', classProbs = TRUE, summaryFunction = twoClassSummary)
+cv_up = trainControl(method = 'cv', number = 5, sampling = 'up', classProbs = TRUE, summaryFunction = twoClassSummary)
+cv_5 = trainControl(method = "cv", number = 5, classProbs = TRUE, summaryFunction = twoClassSummary)
+```
+
+#### Decision Tree with no subsampling. 
+```{r decision tree}
+set.seed(432)
+rpart_nosub = train(Class ~ . - Time,
+                  data = cc_trn,
+                  trControl = cv_5,
+                  method = 'rpart',
+                  metric = "ROC",
+                  )
+```
+
+#### Decision Tree with Downsampling 
+```{r decision tree downsampling}
+set.seed(432)
+rpart_down = train(Class ~ . - Time,
+                  data = cc_trn,
+                  trControl = cv_down,
+                  method = 'rpart',
+                  metric = "ROC",
+                  )
+```
+
+#### Decision Tree with Upsampling 
+```{r decision tree upsampling}
+set.seed(432)
+rpart_up = train(Class ~ . - Time,
+                  data = cc_trn,
+                  trControl = cv_up,
+                  method = 'rpart',
+                  metric = "ROC",
+                  )
+```
+
+#### Random Forest with no Subsampling 
+```{r random forest, cache = TRUE}
+set.seed(432)
+rf_no_sub = train(
+  Class ~ . - Time,
+  data = cc_trn,
+  method = 'rf',
+  metric = 'ROC',
+  trControl = cv_5
+)
+```
+
+#### Random Forest with Downsampling 
+```{r random forest downsample}
+set.seed(432)
+rf_down = train(
+  Class ~ . - Time,
+  data = cc_trn,
+  method = 'rf',
+  metric = 'ROC',
+  trControl = cv_down
+)
+```
+
+#### Random Forest with Upsampling 
+```{r random forest upsample TAKES A LONG TIME, cache = TRUE}
+set.seed(432)
+rf_up = train(
+  Class ~ . - Time,
+  data = cc_trn,
+  method = 'rf',
+  metric = 'ROC',
+  trControl = cv_up
+)
+```
+
+#### XGBoost Without Subsampling
+```{r xgboost, cache = TRUE}
+set.seed(432)
+xgboost_nosub = train(Class ~ . - Time,
+                      data = cc_trn,
+                      method = 'xgbTree',
+                      metric = 'ROC',
+                      trControl = cv_5
+                      )
+```
+
+#### XGBoost with Downsampling 
+```{r xgboost downsample, cache = TRUE}
+set.seed(432)
+xgboost_down = train(Class ~ . - Time,
+                      data = cc_trn,
+                      method = 'xgbTree',
+                      metric = 'ROC',
+                      trControl = cv_down
+                      )
+```
+
+#### XGBoost with Upsampling 
+```{r xgboost upsample, cache = TRUE}
+set.seed(432)
+xgboost_up = train(Class ~ . - Time,
+                      data = cc_trn,
+                      method = 'xgbTree',
+                      metric = 'ROC',
+                      trControl = cv_up
+                      )
+```
 
 ***
 
 ## Results
+```{r, message = FALSE}
+rpart_cm = confusionMatrix(data = cc_tst$Class, reference = predict(rpart_nosub, cc_tst))
+rpart_cm$table
+roc_rpart_nosub = roc(
+  response = cc_tst$Class,
+  predictor = predict(rpart_nosub, cc_tst, type = 'prob')[, 'genuine']
+)
+plot(roc_rpart_nosub)
 
-State your results here.
+```
+
+The table above shows the result of the fraud predictions after training a decision tree model to the training data and then evaluating it on the test data with no subsampling. With the test data,  `3/2000` of the it was labeled fraudulent which means that we had an accuracy rate of 100% and a specificity and precision both of 1. 
 
 ***
 
 ## Discussion
 
-Discuss your results here.
+While our results are 100% accurate, we should take this analysis with a grain of salt. Our data set was purposely split in because of the limitations of my computer system. If my computer was more powerful, we could further optimize our models and see if a bigger data set would have any effect on our results. I fully expect our metrics such as sensitivity, accuracy, precision, and specificity to go down. However, in this situation, we prefer a model where we predict more fraud cases than not. This is because we would rather predict a false positive than a false negative. For example, I would rather have my bank ask about my spending rather than tell me that I am down thousands of dollars from fraud/theft. 
+
+Another problem to consider is the speed of the models that I have tested. I chose the decision tree model because of the speed and performance of the model compared to the other models. For example, random forest also predicted the same 100% accuracy but decision trees had the same result but did the prediction in half the time.
+
+The final problem of this analysis is the problem of predictors. We do not know anything about the principal components used so we cannot for sure say what predictors affect fraud detection more. So, if we had access to the full model we could potentially craft a better model. 
+
 
 ***
 
 ## Appendix
 
-Place potential additional information here.
+### Decision Tree Results 
+
+#### No subsampling 
+```{r, echo = FALSE, message = FALSE}
+rpart_cm = confusionMatrix(data = cc_tst$Class, reference = predict(rpart_nosub, cc_tst))
+rpart_cm$table
+roc_rpart_nosub = roc(
+  response = cc_tst$Class,
+  predictor = predict(rpart_nosub, cc_tst, type = 'prob')[, 'genuine']
+)
+plot(roc_rpart_nosub)
+```
+
+#### Downsampling 
+
+```{r, echo = FALSE, message = FALSE}
+rpart_down_cm = confusionMatrix(data = cc_tst$Class, reference = predict(rpart_down, cc_tst))
+rpart_down_cm$table
+roc_rpart_down = roc(
+  response = cc_tst$Class,
+  predictor = predict(rpart_down, cc_tst, type = 'prob')[, 'genuine']
+)
+plot(roc_rpart_down)
+```
+#### Upsampling 
+```{r, echo = FALSE, message = FALSE}
+rpart_up_cm = confusionMatrix(data = cc_tst$Class, reference = predict(rpart_up, cc_tst))
+rpart_up_cm$table
+roc_rpart_up = roc(
+  response = cc_tst$Class,
+  predictor = predict(rpart_up, cc_tst, type = 'prob')[, 'genuine']
+)
+plot(roc_rpart_up)
+```
+
+### Random Forest Results
+
+#### No Subsampling 
+```{r, echo = FALSE, message = FALSE}
+rf_cm = confusionMatrix(data = cc_tst$Class, reference = predict(rf_no_sub, cc_tst))
+rf_cm$table
+roc_rf_nosub = roc(
+  response = cc_tst$Class,
+  predictor = predict(rf_no_sub, cc_tst, type = 'prob')[, 'genuine']
+)
+plot(roc_rf_nosub)
+```
+
+#### Downsampling 
+```{r, echo = FALSE, message = FALSE}
+rf_down_cm = confusionMatrix(data = cc_tst$Class, reference = predict(rf_down, cc_tst))
+rf_down_cm$table
+roc_rf_down = roc(
+  response = cc_tst$Class,
+  predictor = predict(rf_down, cc_tst, type = 'prob')[, 'genuine']
+)
+plot(roc_rf_down)
+```
+
+#### Upsampling 
+```{r, echo = FALSE, message = FALSE}
+rf_up_cm = confusionMatrix(data = cc_tst$Class, reference = predict(rf_down, cc_tst))
+rf_up_cm$table
+roc_rf_up = roc(
+  response = cc_tst$Class,
+  predictor = predict(rf_up, cc_tst, type = 'prob')[, 'genuine']
+)
+plot(roc_rf_up)
+```
+
+### Xgboost Results 
+
+#### No Subsampling 
+
+```{r, echo = FALSE, message = FALSE}
+xgb_cm = confusionMatrix(data = cc_tst$Class, reference = predict(xgboost_nosub, cc_tst))
+xgb_cm$table
+roc_xgb_nosub = roc(
+  response = cc_tst$Class,
+  predictor = predict(xgboost_nosub, cc_tst, type = 'prob')[, 'genuine']
+)
+plot(roc_xgb_nosub)
+```
+
+#### Downsampling 
+```{r, echo = FALSE, message = FALSE}
+xgb_down_cm = confusionMatrix(data = cc_tst$Class, reference = predict(xgboost_down, cc_tst))
+xgb_down_cm$table
+roc_xgb_down = roc(
+  response = cc_tst$Class,
+  predictor = predict(xgboost_down, cc_tst, type = 'prob')[, 'genuine']
+)
+plot(roc_xgb_down)
+```
+
+#### Upsampling 
+```{r, echo = FALSE, message = FALSE}
+xgb_up_cm = confusionMatrix(data = cc_tst$Class, reference = predict(xgboost_up, cc_tst))
+xgb_up_cm$table
+roc_xgb_up = roc(
+  response = cc_tst$Class,
+  predictor = predict(xgboost_up, cc_tst, type = 'prob')[, 'genuine']
+)
+plot(roc_xgb_up)
+```
+
+
+
+
